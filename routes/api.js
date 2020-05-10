@@ -16,7 +16,7 @@ const CONNECTION_STRING = process.env.DB;
 
 module.exports = function(app) {
   app.route('/api/issues/:project')
-    .get(function(req, res) {
+    .get(function(req, res, next) {
       var project = req.params.project;
       var getQuery = {
         project: project
@@ -37,16 +37,14 @@ module.exports = function(app) {
         }
       }
       MongoClient.connect(CONNECTION_STRING, function(err, db) {
-        if (err) {
-          console.log(err);
-        } else {
-          db.collection("issuetracking")
-            .find(getQuery)
-            .toArray((err, issues) => {
-              if (err) throw err;
-              res.send(issues)
-            })
-        }
+        if (err) return next(err)
+        db.collection("issuetracking")
+          .find(getQuery)
+          .toArray((err, issues) => {
+            if (err) return next(err);
+            res.send(issues)
+          })
+
       })
     })
 
@@ -64,30 +62,27 @@ module.exports = function(app) {
         status_text: req.body.status_text,
         project: project
       };
-      if (data.issue_title ==='' || data.issue_text==='' || data.created_by==='') {
-        return res.send("Missing fields");
+      if (data.issue_title === '' || data.issue_text === '' || data.created_by === '') {
+        return res.send('missing fields');
       }
       MongoClient.connect(CONNECTION_STRING, function(err, db) {
-        if (err) {
-          console.log(err);
-        } else {
-          db.collection("issuetracking").insertOne(data, (err, doc) => {
-            if (err) {
-              console.log(err);
-            } else {
-              console.log("Successfully added to the database");
-              res.json(doc.ops[0]);
-            }
-          })
-        }
+        if (err) return next(err)
+        db.collection("issuetracking").insertOne(data, (err, doc) => {
+          if (err) return next(err)
+          console.log("Successfully added to the database");
+          res.json(doc.ops[0]);
+        })
       })
     })
 
     .put(function(req, res) {
       var project = req.params.project;
-      var putQuery = req.body;
-
-      putQuery._id = ObjectID(req.body._id);
+      var putQuery = {...req.body};
+      if (req.body._id === '') {
+        return res.send('no updated field sent');
+      } else {
+        delete putQuery['_id'];
+      }
       for (let key in putQuery) {
         if (putQuery[key] === "" || putQuery[key] === undefined) {
           delete putQuery[key];
@@ -101,7 +96,6 @@ module.exports = function(app) {
       if (req.body.open) {
         putQuery.open = false;
       };
-
       MongoClient.connect(CONNECTION_STRING, function(err, db) {
         if (err) {
           console.log(err);
@@ -119,13 +113,13 @@ module.exports = function(app) {
               },
               (err, doc) => {
                 if (Object.keys(putQuery).length <= 0) {
-                  res.json("no updated field sent");
+                  res.send("no updated field sent");
                 } else if (err) {
-                  res.json(err);
+                  res.send(err);
                 } else if (doc.value === null) {
-                  res.json("could not update " + ObjectID(req.body._id))
+                  res.send("could not update " + ObjectID(req.body._id))
                 } else {
-                  res.json("successfully updated");
+                  res.send("successfully updated");
                 }
               }
             )
@@ -135,6 +129,9 @@ module.exports = function(app) {
 
     .delete(function(req, res) {
       var project = req.params.project;
+      if (req.body._id === ''){
+        return res.send('No ID provided');
+      }
       MongoClient.connect(CONNECTION_STRING, function(err, db) {
         if (err) {
           console.log(err);
@@ -146,7 +143,7 @@ module.exports = function(app) {
               },
               (err, obj) => {
                 if (err) return err;
-                res.json("deleted " + ObjectID(req.body._id));
+                res.send('deleted ' + req.body._id);
                 db.close();
               })
         }
